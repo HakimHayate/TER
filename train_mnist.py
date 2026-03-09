@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow_datasets as tfds  # <-- La nouvelle méthode robuste !
+import tensorflow_datasets as tfds 
 from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
 
