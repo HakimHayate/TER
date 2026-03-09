@@ -7,7 +7,6 @@ from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
 def creer_et_entrainer_modele():
     print("📥 Téléchargement sécurisé du dataset EMNIST (Digits) via TensorFlow Datasets...")
     
-    # L'astuce batch_size=-1 permet de tout charger en mémoire sous forme de tableaux Numpy d'un seul coup
     train_data = tfds.load('emnist/digits', split='train', batch_size=-1, as_supervised=True)
     test_data = tfds.load('emnist/digits', split='test', batch_size=-1, as_supervised=True)
     
@@ -19,8 +18,6 @@ def creer_et_entrainer_modele():
     x_test, y_test = test_data[0], test_data[1]
 
     print("🔄 Remise à l'endroit des images et normalisation...")
-    # TFDS donne des images au format (Nombre, 28, 28, 1). 
-    # Pour EMNIST, on doit inverser les axes X et Y (axes 1 et 2) pour remettre le chiffre à l'endroit.
     x_train = np.transpose(x_train, axes=(0, 2, 1, 3))
     x_test = np.transpose(x_test, axes=(0, 2, 1, 3))
 

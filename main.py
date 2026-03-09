@@ -29,12 +29,10 @@ def etape_extraction():
         print(f"⚠️ Aucun PDF trouvé dans '{DOSSIER_SCANS}'.")
         return
 
-    # Barre de progression globale pour les documents
     barre_pdfs = tqdm(fichiers_pdf, desc="Documents traités", unit="pdf")
     
     for pdf_path in barre_pdfs:
         nom_pdf = os.path.basename(pdf_path).replace(".pdf", "")
-        # Met à jour le texte à droite de la barre de progression
         barre_pdfs.set_postfix({"Fichier en cours": nom_pdf})
         
         try:
@@ -45,12 +43,8 @@ def etape_extraction():
                 dossier_sauvegarde = os.path.join(DOSSIER_SORTIE, nom_pdf, f"Page_{numero_page}")
                 traiter_page_et_decouper(page_img, numero_page, data_json, dossier_sauvegarde)
 
-            # On prépare les données (l'index et l'image)
             taches = list(enumerate(pages_cv))
 
-            # --- NOUVEAUTÉ : LANCEMENT EN PARALLÈLE ---
-            # ThreadPoolExecutor va lancer plusieurs pages en même temps.
-            # Max_workers=4 signifie 4 pages en simultané.
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                 list(tqdm(executor.map(traiter_une_page, taches), 
                           total=len(taches), 
@@ -59,7 +53,6 @@ def etape_extraction():
                           unit="page"))
 
         except Exception as e:
-            # On utilise tqdm.write pour ne pas casser la barre visuelle avec une erreur
             tqdm.write(f"❌ Erreur sur {nom_pdf} : {str(e)}")
 
 def etape_reconnaissance():

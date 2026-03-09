@@ -5,13 +5,9 @@ import random
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
-import concurrent.futures # <-- Le secret pour lire plusieurs fichiers en même temps
+import concurrent.futures 
 
-def preparer_image_pour_mnist(chemin_image):
-    # (Garde la fonction intacte si tu t'en sers encore ailleurs)
-    pass 
 
-# NOUVELLE FONCTION POUR LE THREADING
 def lire_une_image(chemin):
     """Fonction qui lit une seule image rapidement depuis le disque"""
     label_vrai_str = os.path.basename(os.path.dirname(chemin))
@@ -39,14 +35,12 @@ def evaluer_modele(dossier_extractions, chemin_modele="modele_custom.h5"):
         print("⚠️ Aucune image trouvée pour l'évaluation.")
         return
 
-    print("\n📂 Chargement ULTRA-RAPIDE des images en mémoire (Multithreading)...")
+    print("\n📂 Chargement des images en mémoire (Multithreading)...")
     
     images_brutes = []
     labels_vrais = []
     chemins_valides = []
 
-    # 1. LECTURE PARALLÈLE (Multithreading)
-    # L'ordinateur va utiliser tous ses cœurs pour lire le disque dur
     with concurrent.futures.ThreadPoolExecutor() as executor:
         resultats = list(tqdm(executor.map(lire_une_image, chemins_images), 
                               total=len(chemins_images), 
@@ -65,9 +59,6 @@ def evaluer_modele(dossier_extractions, chemin_modele="modele_custom.h5"):
         return
 
     print("⚡ Vectorisation et Normalisation...")
-    # 3. VECTORISATION NUMPY (Calcul matriciel massif)
-    # Au lieu de faire la division par 255 dans une boucle pour chaque image, 
-    # on le fait en UNE SEULE OPÉRATION sur l'énorme bloc de données !
     X_test = np.array(images_brutes, dtype="float32")
     X_test = X_test / 255.0
     X_test = np.expand_dims(X_test, axis=-1)

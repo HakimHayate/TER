@@ -28,23 +28,17 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
     v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 54))
     v_mask_brut = cv2.morphologyEx(binary_for_grid, cv2.MORPH_OPEN, v_kernel)
 
-    # --- NOUVEAUTÉ : LE FILTRAGE HOUGH ---
-    # On crée deux toiles noires vides
     h_mask_propre = np.zeros_like(binary_for_grid)
     v_mask_propre = np.zeros_like(binary_for_grid)
 
-    # Détection et dessin des Horizontales
-    # Détection des Horizontales (Augmenter minLineLength)
     lines_h = cv2.HoughLinesP(h_mask_brut, 1, np.pi/180, threshold=40, minLineLength=80, maxLineGap=80)
     
-    # Détection des Verticales (Augmenter minLineLength)
     if lines_h is not None:
         for line in lines_h:
             x1, y1, x2, y2 = line[0]
             # On dessine un beau trait blanc d'épaisseur 2 sur la toile noire
             cv2.line(h_mask_propre, (x1, y1), (x2, y2), 255, 2)
 
-    # Détection et dessin des Verticales
     lines_v = cv2.HoughLinesP(v_mask_brut, 1, np.pi/180, threshold=40, minLineLength=80, maxLineGap=80)
     if lines_v is not None:
         for line in lines_v:
@@ -125,8 +119,6 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
         x_b, y_b, w_b, h_b = cv2.boundingRect(coins_scan)
         x_b, y_b = max(0, x_b), max(0, y_b)
         
-        # --- NOUVEAUTÉ : EXTRACTION & CENTRAGE (Format MNIST Direct) ---
-        # On découpe depuis text_and_qr_inv (chiffre blanc sur fond noir)
         chiffre_brut = text_and_qr_inv[y_b:y_b+h_b, x_b:x_b+w_b]
         
         # On trouve la boîte du chiffre pour le recadrer
@@ -140,18 +132,14 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
                 chiffre_seul = chiffre_brut[yc:yc+hc, xc:xc+wc]
                 kernel_stylo = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
                 
-                # 2. On dilate l'image (l'encre blanche va s'étaler et boucher les trous)
                 chiffre_seul = cv2.dilate(chiffre_seul, kernel_stylo, iterations=1)
                 
-                # 3. (Optionnel) Une fermeture pour vraiment coller les morceaux très proches
                 chiffre_seul = cv2.morphologyEx(chiffre_seul, cv2.MORPH_CLOSE, kernel_stylo)
                 # ----------------------------------------------------
 
                 fond_noir = np.zeros((28, 28), dtype=np.uint8)
                 
-                # Redimensionner pour tenir dans 20x20 pixels (laisse une marge de 4px de chaque côté)
                 facteur = 20.0 / max(wc, hc)
-                # On utilise max(1, ...) pour interdire formellement une dimension de 0 pixel
                 w_redim = max(1, int(wc * facteur))
                 h_redim = max(1, int(hc * facteur))
                 
