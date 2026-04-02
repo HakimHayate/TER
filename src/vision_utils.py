@@ -5,23 +5,22 @@ import os
 def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # 1. Binarisation originale (chiffres blancs sur fond noir)
+    # 1. Binarisation originale (35 et 1)
     binary_original = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                                             cv2.THRESH_BINARY_INV, 35, 1)
+    #binary_original = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY_INV)
 
+                    
     h, w = binary_original.shape
     safe_margin = int(w * 0.09) 
 
-    # ==========================================
-    # 2. CRÉATION DU MASQUE DE GRILLE (AVEC HOUGH)
-    # ==========================================
     binary_for_grid = binary_original.copy()
     binary_for_grid[0:safe_margin, 0:safe_margin] = 0 
     binary_for_grid[0:safe_margin, w-safe_margin:w] = 0
     binary_for_grid[h-safe_margin:h, w-safe_margin:w] = 0
     binary_for_grid[h-safe_margin:h, 0:safe_margin] = 0
 
-    # A. Peignes morphologiques de base
+    # A. Peignes morphologiques de base (Taille 54)
     h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (54, 1))
     h_mask_brut = cv2.morphologyEx(binary_for_grid, cv2.MORPH_OPEN, h_kernel)
 
@@ -31,31 +30,34 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
     h_mask_propre = np.zeros_like(binary_for_grid)
     v_mask_propre = np.zeros_like(binary_for_grid)
 
+    # B. Lignes Horizontales (Seuil 40, Longueur min 80)
     lines_h = cv2.HoughLinesP(h_mask_brut, 1, np.pi/180, threshold=40, minLineLength=80, maxLineGap=80)
-    
     if lines_h is not None:
         for line in lines_h:
             x1, y1, x2, y2 = line[0]
-            # On dessine un beau trait blanc d'épaisseur 2 sur la toile noire
             cv2.line(h_mask_propre, (x1, y1), (x2, y2), 255, 2)
 
+    # C. Lignes Verticales (Seuil 40, Longueur min 80)
     lines_v = cv2.HoughLinesP(v_mask_brut, 1, np.pi/180, threshold=40, minLineLength=80, maxLineGap=80)
     if lines_v is not None:
         for line in lines_v:
             x1, y1, x2, y2 = line[0]
             cv2.line(v_mask_propre, (x1, y1), (x2, y2), 255, 2)
 
-    # B. Fusion des lignes parfaites
+    # D. Fusion des lignes parfaites
     fusion_brute = cv2.bitwise_or(h_mask_propre, v_mask_propre) 
     kernel_fuse = np.ones((3,3), np.uint8)
     grid_mask = cv2.dilate(fusion_brute, kernel_fuse, iterations=1)
 
     # ==========================================
-    # 3. Suppression des traits -> Image propre
+    # 3. SUPPRESSION DES TRAITS -> IMAGE PROPRE
     # ==========================================
     text_and_qr_inv = cv2.subtract(binary_original, grid_mask)
     final_clean_image = cv2.bitwise_not(text_and_qr_inv)
-    # 4. Recherche des QR Codes
+
+    # ==========================================
+    # 4. RECHERCHE DES QR CODES
+    # ==========================================
     binary_recherche = cv2.bitwise_not(final_clean_image)
     marge_qr = int(w * 0.15)
     
@@ -91,7 +93,9 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
     if len(centres_scan) != 4:
         return # On sort silencieusement car on a la barre de progression
 
-    # 5. Calcul Homographie Inverse
+    # ==========================================
+    # 5. CALCUL HOMOGRAPHIE INVERSE
+    # ==========================================
     centres_json = {}
     for cle in cles_qr:
         if cle not in data_json:
@@ -103,7 +107,9 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
     dst_points = np.array([centres_json[k] for k in cles_qr], dtype="float32")
     H_inverse, _ = cv2.findHomography(dst_points, src_points)
 
-    # 6. Découpage, CENTRAGE MNIST et Sauvegarde
+    # ==========================================
+    # 6. DÉCOUPAGE, CENTRAGE MNIST ET SAUVEGARDE
+    # ==========================================
     os.makedirs(dossier_sauvegarde, exist_ok=True)
 
     for nom_case, infos in data_json.items():
@@ -133,10 +139,8 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
                 kernel_stylo = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
                 
                 chiffre_seul = cv2.dilate(chiffre_seul, kernel_stylo, iterations=1)
-                
                 chiffre_seul = cv2.morphologyEx(chiffre_seul, cv2.MORPH_CLOSE, kernel_stylo)
-                # ----------------------------------------------------
-
+                
                 fond_noir = np.zeros((28, 28), dtype=np.uint8)
                 
                 facteur = 20.0 / max(wc, hc)
@@ -144,6 +148,7 @@ def traiter_page_et_decouper(image, numero_page, data_json, dossier_sauvegarde):
                 h_redim = max(1, int(hc * facteur))
                 
                 chiffre_redim = cv2.resize(chiffre_seul, (w_redim, h_redim), interpolation=cv2.INTER_AREA)
+                
                 # Centrer
                 x_offset = (28 - w_redim) // 2
                 y_offset = (28 - h_redim) // 2
