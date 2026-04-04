@@ -1,17 +1,66 @@
 import numpy as np
-from pdf2image import convert_from_path
 import json
-from pyzbar.pyzbar import decode
-import os
 import cv2
+from pyzbar.pyzbar import decode  
 import configuration as cf
+import time  
+import os
+import fitz
 
-def read_pdf(pdf_path, dpi=300):
-    images = convert_from_path(pdf_path, dpi=dpi)
-    return [np.array(img) for img in images]
+
+
+def stream_pdf_pages(pdf_path, start_page=0, end_page=None):
+    """
+    Générateur extrayant les flux d'images brutes d'une plage de pages PDF.
+    
+    Optimise la mémoire en ne chargeant pas le document complet et en 
+    décodant les images à la volée via OpenCV pour le traitement.
+
+    Args:
+        pdf_path (str): Chemin local vers le fichier PDF à traiter.
+        start_page (int): Index de la première page (inclus, défaut 0).
+        end_page (int, optional): Index de fin (exclu). Si None, traite jusqu'à la fin.
+
+    Yields:
+        numpy.ndarray: Image décodée au format BGR (OpenCV) prête pour le prétraitement.
+    """
+    doc = fitz.open(pdf_path)
+    total_pages = len(doc)
+    
+    if end_page is None or end_page > total_pages:
+        end_page = total_pages
+
+    for page_index in range(start_page, end_page):
+        page = doc[page_index]
+        image_list = page.get_images(full=True)
+        for img_info in image_list:
+            xref = img_info[0]
+            base_image = doc.extract_image(xref)
+            image_bytes = base_image["image"]
+            
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is not None:
+                yield img 
+    doc.close()
+
 
 def read_json(json_path):
-    """Retourne les coins théoriques des QR codes et toutes les autres boîtes."""
+    """
+    Extrait les coordonnées théoriques (en mm) des marqueurs de calage et des zones de saisie.
+
+    Cette fonction parse le fichier de configuration JSON pour définir les points d'ancrage 
+    nécessaires à l'homographie et la liste complète des rectangles à découper.
+
+    Args:
+        json_path (str): Chemin vers le fichier JSON contenant le template du formulaire.
+
+    Returns:
+        tuple: Un tuple contenant :
+            - list: Les 8 points d'ancrage (Top-Left, Top-Right, etc.) pour la matrice de transformation.
+            - list: La liste de tous les rectangles au format (x, y, w, h).
+    """
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -32,43 +81,141 @@ def read_json(json_path):
             w = value.get("width", 0)
             h = value.get("height", 0)
             rects.append((x, y, w, h))
-
         return [tltl,tlbr,trtl,trbr,bltl,blbr,brtl,brbr], rects
+
+def save_boxes(pages_dir, crop_img,box_idx):
+    """
+    Enregistre physiquement une image découpée (crop) sur le disque.
+
+    Utilise l'identifiant extrait du JSON pour nommer le fichier, en 
+    tronquant les identifiants longs pour garantir la compatibilité du nommage.
+
+    Args:
+        pages_dir (str): Répertoire de destination (généralement lié à l'index de la page).
+        boxe (numpy.ndarray): Matrice de pixels de la zone découpée.
+        box_idx (str): Identifiant unique de la case (ex: clé JSON) servant de nom de fichier.
+
+    Returns:
+        None: Le fichier est écrit directement dans le dossier spécifié.
+    """
+    if len(box_idx) < 10 :
+        box_idx = box_idx[-5:]
+
+    crop_path = os.path.join(pages_dir,f"{box_idx}.jpg")
+    cv2.imwrite(crop_path, crop_img)
+
+
 
 
 def read_Qrcode(img):
+    """
+    Localise et décode les 4 QR codes de calage situés aux coins du document.
+    
+    Divise l'image en zones d'intérêt (ROI) de 20% pour accélérer la détection 
+    et extrait les coordonnées (x, y) de chaque marqueur pour recaler le formulaire.
 
-    qr_code = decode(img)
-    src = [None,None,None,None,None,None,None,None]
-    for qr in qr_code:
-        data = qr.data.decode("utf-8")
-        points = [(p.x, p.y) for p in qr.polygon]
+    Args:
+        img (numpy.ndarray): L'image de la page entière en format BGR ou Gris.
 
-        points = sorted(points, key=lambda p: (p[1], p[0]))  
-        top = sorted(points[:2], key=lambda p: p[0])  
-        bottom = sorted(points[2:], key=lambda p: p[0]) 
-        tl, tr = top
-        bl, br = bottom
+    Returns:
+        list: Liste de 8 couples de coordonnées (pixels) correspondant aux coins 
+              extérieurs et intérieurs des QR codes détectés. Les emplacements non 
+              détectés restent à None.
+    """
+    detector = cv2.QRCodeDetector()
+    result = [False, False, False, False]
+    src = [None]*8
 
-        key_prefix = data.split(',')[0]
-        if key_prefix == "hztl":
-            src[0] = tl
-            src[1] = br
-        elif key_prefix == "hztr":
-            src[2] = tl
-            src[3] = br
-        elif key_prefix == "hzbl":
-            src[4] = tl
-            src[5] = br
-        elif key_prefix == "hzbr":
-            src[6] = tl
-            src[7] = br
+    h, w = img.shape[:2]
 
-    print(f"result : {src}")
+    # ---------- TOP LEFT ----------
+    x_offset = 0
+    y_offset = 0
+
+    img_tl = img[:int(0.2*h), :int(0.2*w)]
+    data, points, _ = detector.detectAndDecode(img_tl)
+
+    if points is not None:
+        result[0] = True
+        pts = points[0]
+        x1, y1 = pts[0]
+        x2, y2 = pts[2]
+
+        src[0] = (int(x1 + x_offset), int(y1 + y_offset))
+        src[1] = (int(x2 + x_offset), int(y2 + y_offset))
+
+
+    # ---------- TOP RIGHT ----------
+    x_offset = int(0.8*w)
+    y_offset = 0
+
+    img_tr = img[:int(0.2*h), int(0.8*w):]
+    data, points, _ = detector.detectAndDecode(img_tr)
+
+    if points is not None:
+        result[1] = True
+        pts = points[0]
+        x1, y1 = pts[0]
+        x2, y2 = pts[2]
+
+        src[2] = (int(x1 + x_offset), int(y1 + y_offset))
+        src[3] = (int(x2 + x_offset), int(y2 + y_offset))
+
+
+    # ---------- BOTTOM LEFT ----------
+    x_offset = 0
+    y_offset = int(0.8*h)
+
+    img_bl = img[int(0.8*h):, :int(0.2*w)]
+    data, points, _ = detector.detectAndDecode(img_bl)
+
+    if points is not None:
+        result[2] = True
+        pts = points[0]
+        x1, y1 = pts[0]
+        x2, y2 = pts[2]
+
+        src[4] = (int(x1 + x_offset), int(y1 + y_offset))
+        src[5] = (int(x2 + x_offset), int(y2 + y_offset))
+
+
+    # ---------- BOTTOM RIGHT ----------
+    x_offset = int(0.8*w)
+    y_offset = int(0.8*h)
+
+    img_br = img[int(0.8*h):, int(0.8*w):]
+    data, points, _ = detector.detectAndDecode(img_br)
+
+    if points is not None:
+        result[3] = True
+        pts = points[0]
+        x1, y1 = pts[0]
+        x2, y2 = pts[2]
+
+        src[6] = (int(x1 + x_offset), int(y1 + y_offset))
+        src[7] = (int(x2 + x_offset), int(y2 + y_offset))
+
+
     return src
 
+
+
 def transform_rects(rects, H):
+    """
+    Projette les rectangles théoriques sur l'image scannée via une matrice d'homographie.
     
+    Convertit chaque zone (x, y, w, h) en 4 points, applique la transformation de 
+    perspective, puis recalcule la boîte englobante droite (Bounding Box) 
+    alignée sur les axes de l'image de destination.
+
+    Args:
+        rects (list): Liste de tuples (x, y, w, h) en pixels (coordonnées théoriques).
+        H (numpy.ndarray): Matrice d'homographie 3x3 calculée via cv2.findHomography.
+
+    Returns:
+        list: Liste de tuples (xmin, ymin, xmax, ymax) représentant les coordonnées 
+              projetées et redressées prêtes pour l'opération de découpage (crop).
+    """
     transformed_rects = []
 
     for rect in rects:
@@ -91,7 +238,23 @@ def transform_rects(rects, H):
     return transformed_rects
 
 def mm_to_pixel_list(coords_mm,img):
+    """
+    Convertit des coordonnées du monde réel (mm) en coordonnées image (pixels).
+    
+    Calcule dynamiquement les ratios d'échelle en fonction de la résolution 
+    de l'image fournie et des dimensions de référence définies dans la configuration.
 
+    Args:
+        coords_mm (list): Liste de tuples (x, y) ou (x, y, w, h) exprimés en millimètres.
+        img (numpy.ndarray): Image de référence utilisée pour extraire la résolution (H, W).
+
+    Returns:
+        list: Liste de coordonnées converties en entiers (pixels), arrondie à l'unité 
+              la plus proche pour garantir la précision du découpage.
+
+    Raises:
+        ValueError: Si une coordonnée ne possède ni 2 ni 4 éléments.
+    """
     img_height_px, img_width_px = img.shape[:2]
     scale_x = img_width_px / cf.img_width
     scale_y = img_height_px / cf.img_height
@@ -114,7 +277,22 @@ def mm_to_pixel_list(coords_mm,img):
 
 
 
-def src_dst_preprocess(src, dst):
+def filter_valid_markers(src, dst):
+    """
+    Filtre et aligne les points d'ancrage théoriques et détectés.
+    
+    Élimine les paires de coordonnées incomplètes (cas où un marqueur 
+    n'a pas été détecté sur l'image) pour garantir la validité de 
+    la matrice de transformation.
+
+    Args:
+        src (list): Liste des points théoriques (source) en pixels.
+        dst (list): Liste des points réellement détectés (destination) sur le scan.
+
+    Returns:
+        tuple: Un tuple (new_src, new_dst) ne contenant que les paires de points 
+              valides (non-None) prêtes pour le calcul de l'homographie.
+    """
     new_src = []
     new_dst = []
 
@@ -128,7 +306,22 @@ def src_dst_preprocess(src, dst):
 
 
 
-def save_result(pages, base_folder="output", sub_folder="preprocess"):
+def export_processed_images(pages, base_folder="output", sub_folder="preprocess"):
+    """
+    Exporte une liste d'images traitées vers un répertoire local.
+    
+    Gère la création automatique de l'arborescence des dossiers et convertit 
+    les images du format de travail (RGB) vers le format de stockage (BGR) 
+    requis par OpenCV pour une restitution correcte des couleurs.
+
+    Args:
+        pages (list): Liste de matrices d'images (numpy.ndarray) à sauvegarder.
+        base_folder (str): Dossier racine pour l'export (défaut "output").
+        sub_folder (str): Sous-répertoire spécifique (défaut "preprocess").
+
+    Returns:
+        None: Affiche un message de confirmation dans la console après l'écriture.
+    """
     output_folder = os.path.join(base_folder, sub_folder)
     os.makedirs(output_folder, exist_ok=True)
     for i, img in enumerate(pages):

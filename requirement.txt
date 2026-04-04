@@ -1,16 +1,32 @@
-filelock==3.19.1
-fsspec==2025.9.0
-Jinja2==3.1.6
-MarkupSafe==2.1.5
-mpmath==1.3.0
-networkx==3.5
-numpy==2.2.6
-nvidia-cufile-cu12==1.13.1.3
+# --- Cœur du projet (Traitement PDF & Image) ---
+PyMuPDF==1.27.2.2
 opencv-python==4.12.0.88
 pdf2image==1.17.0
 pillow==12.0.0
-setuptools==80.9.0
-sympy==1.14.0
+
+# --- Intelligence Artificielle & Détection ---
+ultralytics==8.4.21
 torch==2.9.0+cpu
 torchvision==0.24.0+cpu
-typing_extensions==4.15.0
+onnxruntime==1.24.4
+pyzbar==0.1.9
+qreader==3.16
+qrdet==2.5
+quadrilateral-fitter==1.12
+
+# --- Calcul & Data ---
+numpy==2.2.6
+scipy==1.17.0
+scikit-learn==1.8.0
+pandas==3.0.1
+polars==1.38.1
+
+# --- Benchmark & Visualisation ---
+psutil==7.2.2
+matplotlib==3.10.8
+seaborn==0.13.2
+tqdm==4.67.3
+
+# --- Utilitaires ---
+PyYAML==6.0.3
+requests==2.32.5

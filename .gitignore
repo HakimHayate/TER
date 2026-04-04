@@ -208,3 +208,7 @@ __marimo__/
 
 
 HekzamEnv/*
+HekzamEnv/
+__pycache__/
+.vscode/
+data/MNIST/
