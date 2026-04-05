@@ -1,0 +1,19 @@
+# --- Vision par ordinateur ---
+opencv-python
+
+# --- Intelligence Artificielle ---
+tensorflow
+numpy
+
+# --- Manipulation de PDF ---
+# Note : Nécessite l'installation de Poppler sur le système
+pdf2image
+
+# --- Analyse et Visualisation ---
+scikit-learn
+matplotlib
+seaborn
+
+# --- Utilitaires ---
+tqdm
+python-dotenv
